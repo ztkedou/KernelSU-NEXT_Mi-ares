@@ -29,8 +29,15 @@ jobs:
           # drivers/kernelsu "symlink" is a plain 23-byte text file.
           # Do the integration manually and idempotently:
           rm -rf KernelSU-Next drivers/kernelsu
-          # Real source: default branch is `dev` (there is NO `next` branch)
-          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+          # v1.0.9 = legacy-manual mode kernel code, hooks match this tree's
+          # fs/exec.c/open.c/stat.c/read_write.c/input.c manual hooks, and its
+          # Kconfig has NO KPROBES dependency (dev mainline KSU requires
+          # KPROBES which ares defconfig disables -> CONFIG_KSU silently
+          # dropped -> "manager not integrated"). LSM task_prctl handles
+          # supercalls (CONFIG_KSU_LSM_SECURITY_HOOKS default y).
+          git clone --depth=1 -b v1.0.9 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+          test -f KernelSU-Next/kernel/ksu.c || { echo "v1.0.9 kernel source missing"; exit 1; }
+          grep -q "int ksu_handle_execveat" KernelSU-Next/kernel/ksu.c && echo "hook API verified"
           echo "=== kernel dir in KSU-Next ==="
           ls KernelSU-Next/kernel/ | head -8
           test -f KernelSU-Next/kernel/Makefile || { echo "KSU kernel source missing"; exit 1; }
