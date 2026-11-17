@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev \
-            curl git cpio gzip unzip device-tree-compiler python3
+            curl git cpio gzip unzip device-tree-compiler python3 zstd wget
 
       - name: Integrate KernelSU-Next (official setup.sh, latest tag)
         working-directory: kernel
@@ -35,18 +35,39 @@ jobs:
           echo 'CONFIG_KSU=y' >> arch/arm64/configs/ares_user_defconfig
           grep -i 'CONFIG_KSU' arch/arm64/configs/ares_user_defconfig
 
+      - name: Download Neutron clang (tag 10032024, glibc 2.39)
+        working-directory: kernel
+        run: |
+          curl -s https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman -o antman.sh
+          chmod +x antman.sh
+          mkdir -p clang
+          cd clang
+          bash ../antman.sh -S=10032024
+          echo "=== clang version ==="
+          bin/clang --version | head -3
+
       - name: Build kernel
         working-directory: kernel
         run: |
-          chmod +x build.sh
-          ./build.sh
+          export PATH="$PWD/clang/bin:$PATH"
+          make O=out ARCH=arm64 ares_user_defconfig
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC="clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$PWD/clang/bin/aarch64-linux-gnu-" \
+            CROSS_COMPILE_ARM32="$PWD/clang/bin/arm-linux-gnueabi-" \
+            LD=ld.lld STRIP=llvm-strip AS=llvm-as AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
+            CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
+          echo "=== artifacts ==="
+          find out -name 'Image*' -o -name '*.dtb' | head -20
 
       - name: Collect artifact
         run: |
           mkdir -p out_artifact
-          find kernel/out -name 'Image.gz-dtb' -o -name 'Image' | head -5
           IMG=$(find kernel/out -name 'Image.gz-dtb' | head -1)
           if [ -z "$IMG" ]; then IMG=$(find kernel/out -name 'Image' | head -1); fi
+          echo "IMG=$IMG"
           cp "$IMG" out_artifact/Image.gz-dtb
           ls -lh out_artifact/
 
