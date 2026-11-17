@@ -44,6 +44,17 @@ jobs:
           tail -3 drivers/Kconfig
           echo "=== KSU integration OK ==="
 
+      - name: Patch missing netfilter source (xt_TCPMSS.c absent in ares oss trees)
+        working-directory: kernel
+        run: |
+          # xt_TCPMSS.c is referenced by net/netfilter/Makefile and defconfig
+          # (CONFIG_NETFILTER_XT_TARGET_TCPMSS=y) but missing in every public
+          # ares tree except Xiaomi's official MiCode branch. Fetch it there.
+          curl -fsSL "https://raw.githubusercontent.com/MiCode/Xiaomi_Kernel_OpenSource/ares-r-oss/net/netfilter/xt_TCPMSS.c" \
+            -o net/netfilter/xt_TCPMSS.c
+          ls -la net/netfilter/xt_TCPMSS.c
+          head -5 net/netfilter/xt_TCPMSS.c
+
       - name: Force KSU config on
         working-directory: kernel
         run: |
@@ -65,6 +76,7 @@ jobs:
       - name: Build kernel
         working-directory: kernel
         run: |
+          set -o pipefail
           export PATH="$PWD/clang/bin:$PATH"
           make O=out ARCH=arm64 ares_user_defconfig
           make -j$(nproc --all) O=out ARCH=arm64 \
@@ -76,7 +88,7 @@ jobs:
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump \
             CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
           echo "=== artifacts ==="
-          find out -name 'Image*' -o -name '*.dtb' | head -20
+          find out -maxdepth 4 -name 'Image*' -o -maxdepth 4 -name '*.dtb' | head -20
 
       - name: Collect artifact
         run: |
