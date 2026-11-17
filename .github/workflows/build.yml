@@ -1,0 +1,58 @@
+name: Build KernelSU-Next for ares (K40 Gaming)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: ztkedou/KernelSU-NEXT_Mi-ares
+          ref: main
+          path: kernel
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev \
+            curl git cpio gzip unzip device-tree-compiler python3
+
+      - name: Integrate KernelSU-Next (official setup.sh, latest tag)
+        working-directory: kernel
+        run: |
+          # Official KernelSU-Next integration script, latest tagged release.
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
+          echo "=== KSU integrated ==="
+          ls -la KernelSU-Next/kernel 2>/dev/null || ls -la drivers/kernelsu 2>/dev/null
+
+      - name: Force KSU config on
+        working-directory: kernel
+        run: |
+          sed -i '/CONFIG_KSU=/d; /# CONFIG_KSU is not set/d' arch/arm64/configs/ares_user_defconfig
+          echo 'CONFIG_KSU=y' >> arch/arm64/configs/ares_user_defconfig
+          grep -i 'CONFIG_KSU' arch/arm64/configs/ares_user_defconfig
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Collect artifact
+        run: |
+          mkdir -p out_artifact
+          find kernel/out -name 'Image.gz-dtb' -o -name 'Image' | head -5
+          IMG=$(find kernel/out -name 'Image.gz-dtb' | head -1)
+          if [ -z "$IMG" ]; then IMG=$(find kernel/out -name 'Image' | head -1); fi
+          cp "$IMG" out_artifact/Image.gz-dtb
+          ls -lh out_artifact/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-next-ares-Image
+          path: out_artifact/Image.gz-dtb
+          retention-days: 30
