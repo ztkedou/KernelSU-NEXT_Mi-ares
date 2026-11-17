@@ -20,27 +20,29 @@ jobs:
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses-dev \
             curl git cpio gzip unzip device-tree-compiler python3 zstd wget
 
-      - name: Integrate KernelSU-Next (official setup.sh, latest tag)
+      - name: Integrate KernelSU-Next (manual, dev branch)
         working-directory: kernel
         run: |
-          # Official KernelSU-Next integration script, latest tagged release.
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s
-          # Fix: upstream author committed the symlink as a PLAIN TEXT FILE
-          # (23 bytes "../KernelSU-Next/kernel") because he pushed from Windows.
-          # Replace it with a real symlink so Kbuild/Kconfig resolve.
-          rm -f drivers/kernelsu
+          # Upstream ares repo has a DANGLING submodule entry "KernelSU-Next"
+          # (type: submodule with no URL) -> dir exists but is empty, which
+          # silently defeats setup.sh's `test -d` check. Also the fake
+          # drivers/kernelsu "symlink" is a plain 23-byte text file.
+          # Do the integration manually and idempotently:
+          rm -rf KernelSU-Next drivers/kernelsu
+          # Real source: default branch is `dev` (there is NO `next` branch)
+          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU-Next
+          echo "=== kernel dir in KSU-Next ==="
+          ls KernelSU-Next/kernel/ | head -8
+          test -f KernelSU-Next/kernel/Makefile || { echo "KSU kernel source missing"; exit 1; }
+          # Real symlink (was committed as plain text file by upstream author)
           ln -s ../KernelSU-Next/kernel drivers/kernelsu
           ls -la drivers/kernelsu
-          echo "=== assert KSU kernel source present ==="
-          ls KernelSU-Next/kernel/ | head -10
-          if [ ! -f KernelSU-Next/kernel/Kbuild ] && [ ! -f KernelSU-Next/kernel/Makefile ]; then
-            echo "KSU kernel source missing -> manual clone fallback"
-            git clone --depth=1 -b next https://github.com/KernelSU-Next/KernelSU-Next.git /tmp/ksunext
-            mkdir -p KernelSU-Next
-            cp -r /tmp/ksunext/kernel KernelSU-Next/
-          fi
-          test -f KernelSU-Next/kernel/Kbuild || test -f KernelSU-Next/kernel/Makefile
-          echo "=== KSU source OK ==="
+          # Ensure build hooks in drivers/Makefile and drivers/Kconfig
+          grep -q "obj-\$(CONFIG_KSU)" drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          grep -q 'drivers/kernelsu/Kconfig' drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          tail -3 drivers/Makefile
+          tail -3 drivers/Kconfig
+          echo "=== KSU integration OK ==="
 
       - name: Force KSU config on
         working-directory: kernel
