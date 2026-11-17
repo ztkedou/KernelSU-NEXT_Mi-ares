@@ -44,16 +44,34 @@ jobs:
           tail -3 drivers/Kconfig
           echo "=== KSU integration OK ==="
 
-      - name: Patch missing netfilter source (xt_TCPMSS.c absent in ares oss trees)
+      - name: Patch missing netfilter files (Windows-case-loss export holes)
         working-directory: kernel
         run: |
-          # xt_TCPMSS.c is referenced by net/netfilter/Makefile and defconfig
-          # (CONFIG_NETFILTER_XT_TARGET_TCPMSS=y) but missing in every public
-          # ares tree except Xiaomi's official MiCode branch. Fetch it there.
-          curl -fsSL "https://raw.githubusercontent.com/MiCode/Xiaomi_Kernel_OpenSource/ares-r-oss/net/netfilter/xt_TCPMSS.c" \
-            -o net/netfilter/xt_TCPMSS.c
-          ls -la net/netfilter/xt_TCPMSS.c
-          head -5 net/netfilter/xt_TCPMSS.c
+          # Every UPPERCASE-named file was lost when the tree was exported on a
+          # case-insensitive filesystem. Restore all of them from Xiaomi's
+          # official MiCode ares-r-oss branch (single authoritative source).
+          declare -A FILES=(
+            ["net/netfilter/xt_TCPMSS.c"]="net/netfilter/xt_TCPMSS.c"
+            ["net/netfilter/xt_DSCP.c"]="net/netfilter/xt_DSCP.c"
+            ["net/netfilter/xt_HL.c"]="net/netfilter/xt_HL.c"
+            ["net/netfilter/xt_RATEEST.c"]="net/netfilter/xt_RATEEST.c"
+            ["include/uapi/linux/netfilter/xt_TCPMSS.h"]="include/uapi/linux/netfilter/xt_TCPMSS.h"
+            ["include/uapi/linux/netfilter/xt_CONNMARK.h"]="include/uapi/linux/netfilter/xt_CONNMARK.h"
+            ["include/uapi/linux/netfilter/xt_DSCP.h"]="include/uapi/linux/netfilter/xt_DSCP.h"
+            ["include/uapi/linux/netfilter/xt_MARK.h"]="include/uapi/linux/netfilter/xt_MARK.h"
+            ["include/uapi/linux/netfilter/xt_RATEEST.h"]="include/uapi/linux/netfilter/xt_RATEEST.h"
+            ["include/uapi/linux/netfilter_ipv4/ipt_ECN.h"]="include/uapi/linux/netfilter_ipv4/ipt_ECN.h"
+            ["include/uapi/linux/netfilter_ipv4/ipt_TTL.h"]="include/uapi/linux/netfilter_ipv4/ipt_TTL.h"
+            ["include/uapi/linux/netfilter_ipv6/ip6t_HL.h"]="include/uapi/linux/netfilter_ipv6/ip6t_HL.h"
+          )
+          FAIL=0
+          for dst in "${!FILES[@]}"; do
+            src="${FILES[$dst]}"
+            curl -fsSL "https://raw.githubusercontent.com/MiCode/Xiaomi_Kernel_OpenSource/ares-r-oss/${src}" -o "${dst}" || { echo "FAILED: ${src}"; FAIL=1; }
+          done
+          ls -la net/netfilter/xt_TCPMSS.c net/netfilter/xt_DSCP.c net/netfilter/xt_HL.c net/netfilter/xt_RATEEST.c
+          [ "$FAIL" = "0" ] || exit 1
+          echo "=== all 12 files restored ==="
 
       - name: Force KSU config on
         working-directory: kernel
